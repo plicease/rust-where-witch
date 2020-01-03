@@ -5,24 +5,8 @@ use std::path;
 #[cfg(unix)]
 const INCLUDE_CWD_BY_DEFAULT: bool = false;
 
-#[cfg(unix)]
-const PATH_SEP: &str = ":";
-
 #[cfg(windows)]
-const INCLUDE_CWD_BY_DEFAULT: bool = false;
-
-#[cfg(windows)]
-const PATH_SEP: &str = ";";
-
-#[cfg(unix)]
-const PATHEXT_DEFAULT: &str = "";
-
-/* This is the default for Windows Vista and later...
- * Windows 7 is done in a couple of weeks as of this writing
- * so we won't support it
- */
-#[cfg(windows)]
-const PATHEXT_DEFAULT: &str = ".com;.exe;.bat;.cmd;.vbs;.vbe;.js;.jse;.wsf;.wsh;.msc";
+const INCLUDE_CWD_BY_DEFAULT: bool = true;
 
 pub enum WhereError {}
 
@@ -36,8 +20,8 @@ impl Iterator for WhereIter {
 }
 
 pub struct WhereConfig {
-    path: ffi::OsString,
-    ext: ffi::OsString,
+    dirs: Vec<path::PathBuf>,
+    exts: Vec<ffi::OsString>,
 }
 
 impl WhereConfig {
@@ -51,39 +35,64 @@ impl WhereConfig {
             None => INCLUDE_CWD_BY_DEFAULT,
         };
 
-        let mut path = ffi::OsString::new();
+        let mut dirs: Vec<path::PathBuf> = Vec::new();
 
         if include_cwd {
-            path.push(env::current_dir().unwrap().as_os_str());
+            let cwd = env::current_dir().unwrap();
+            let cwd = path::PathBuf::from(cwd.as_os_str());
+            dirs.push(cwd);
         }
 
         match search_path {
             Some(search_path) => {
-                if include_cwd {
-                    path.push(PATH_SEP);
+                for dir in env::split_paths(search_path) {
+                    dirs.push(path::PathBuf::from(dir));
                 }
-                path.push(search_path);
             }
             None => match env::var_os("PATH") {
                 Some(search_path) => {
-                    if include_cwd {
-                        path.push(PATH_SEP);
+                    for dir in env::split_paths(&search_path) {
+                        let dir = dir.clone();
+                        dirs.push(path::PathBuf::from(&dir));
                     }
-                    path.push(search_path);
                 }
                 None => (),
             },
         };
 
-        let ext = match search_ext {
-            Some(search_ext) => ffi::OsString::from(search_ext),
-            None => ffi::OsString::from(PATHEXT_DEFAULT),
+        let mut exts: Vec<ffi::OsString> = Vec::new();
+
+        match search_ext {
+            Some(search_ext) => {
+                for ext in env::split_paths(search_ext) {
+                    exts.push(ffi::OsString::from(ext));
+                }
+            }
+            None => {
+                #[cfg(windows)]
+                match env::var_os("PATHEXT") {
+                    Some(search_ext) => {
+                        for ext in env::split_paths(&search_ext) {
+                            exts.push(ffi::OsString::from(ext));
+                        }
+                    }
+                    None => {
+                        for ext in [
+                            ".com", ".exe", ".bat", ".cmd", ".vbs", ".js", ".jse", ".wsf", ".wsh",
+                            ".msc",
+                        ]
+                        .iter()
+                        {
+                            exts.push(ffi::OsString::from(ext));
+                        }
+                    }
+                }
+                #[cfg(unix)]
+                ()
+            }
         };
 
-        WhereConfig {
-            path: path,
-            ext: ext,
-        }
+        WhereConfig { dirs, exts }
     }
 
     pub fn which(name: &str) -> WhereIter {
