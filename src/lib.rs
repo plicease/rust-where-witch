@@ -77,7 +77,7 @@ impl WhereConfig {
                         }
                     }
                     None => {
-                        for ext in [
+                        for ext in vec![
                             ".com", ".exe", ".bat", ".cmd", ".vbs", ".js", ".jse", ".wsf", ".wsh",
                             ".msc",
                         ]
@@ -95,7 +95,7 @@ impl WhereConfig {
         WhereConfig { dirs, exts }
     }
 
-    pub fn which(name: &str) -> WhereIter {
+    pub fn which(&self, name: &str) -> WhereIter {
         WhereIter
     }
 }
